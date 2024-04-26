@@ -1,4 +1,6 @@
-# C++
+# C++快捷入门指南
+
+C++ Amatur Tutorial
 
 ## 一些基础语法
 
@@ -919,27 +921,69 @@ const int* const GetX() const{
 ```
 结合一下前文提到的const用法,这个方法的翻译是:返回一个常量指针,指针指向一个int常量,方法内部不允许修改类属性值.
 
-
-有时由于重载你可以见到两个方法:
-```
-    int getX() const;
-    int getX();
-```
-
-根据实例是否被const修饰,实例会自动选择对应的getX()执行.
-
-如果没有修改类或者不应该修改类时,就把方法标记为const.
-被mutable的变量可以被类中const方法修改.mutable即允许const方法修改自己的变量.
-mutable实际上有两种不同的用法,一种是和const一起使用,一种是在lambda表达式中使用.
-
-
 ### 修饰参数
 
+考虑下列情况
+
 ```
-void printEntity(const Entity* e){
-    ...
+class Entity{
+private:
+    int x,y;
+public
+    int getX(){
+        return x;
+    }
+}
+
+// error
+void printEntity(const Entity& e){
+    cout<<e.getX()<<endl;
 }
 ```
-在传递参数时使用const,来保证方法里延续这个约定
-这个例子中传递了一个指向const Entity的指针
-也就是这个方法保证了指针e所指内容不能更改
+在传递参数时使用const,意味着这个Entity不能够被修改.
+而此时使用e.getX()将会报错,因为编译器无法保证getX()方法不会修改Entity.
+正确的做法是在类方法中加入const修饰来提供这样的保证.
+
+由于重载有时可以见到两个方法:
+
+```
+int getX() const;
+int getX();
+```
+
+编译器会根据参数是否被const修饰而选择对应的方法
+如果没有修改类或者不应该修改类时,把方法标记为const是良好的习惯,以防止有人使用常量引用或类似情况使用你的方法
+
+### mutable
+
+有些情况下,你既需要把类方法标记为const,又需要同时修改某个变量,需要mutable修饰需要修改的变量.
+被const修饰的方法中,允许修改被mutable修饰的变量.
+
+一个例子:
+
+```
+class Entity{
+private:
+    int x,y;
+    mutable int debug_count = 0;
+public:
+    int getX() const{
+        debug_count++;
+        return x;
+    }
+}
+```
+mutable与const一起使用时最常见的使用方法
+另一种是在lambda表达式中使用
+lambda类似一个一次性的小函数,可以写出来并赋给一个变量 可以选择用值或者引用传递
+[]里的=表示值传递,&表示引用传递
+
+```
+int value = 114514;
+auto f = [=]() mutable{
+    std::cout << value << std::endl;
+};
+f();
+```
+
+在lambda中使用mutable非常罕见,lambda的具体使用日后再说
