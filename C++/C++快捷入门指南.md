@@ -773,6 +773,7 @@ Entity* p = new Entity();
 int array[5];
 ```
 这意味着在栈上分配一个5*sizeof(int)
+
 此时array作为一个长度为5的int数组,其大小是已知的,通过sizeof即可获得
 那么想要知道它的长度只需：
 ```
