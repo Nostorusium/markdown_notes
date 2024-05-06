@@ -271,7 +271,7 @@ int main(){
 ```
 
 当new Entity()返回Entity的指针,它作为scopedPtr的隐式构造参数构造了scopedPtr;
-而又因为scopedPtr的对象是在栈上分配的,它离开这个括号后就被释放并执行析构函数
+而又因为scopedPtr的对象是在栈上分配的(没有new它自己),它离开这个括号后就被释放并执行析构函数
 析构函数中用来释放这个地址对应的Entity实例对象
 
 这个例子实现了smart_ptr与unique_ptr的最基本功能.
@@ -367,3 +367,189 @@ int main(){
 
 由于unique_ptr开销最小,尽可能多用.
 当指针需要共享时,使用shared_ptr和weak_ptr
+
+## 友元
+
+在类内声明的友元函数意味着允许这个类外函数使用该类的private成员
+
+## 复制与性能分析
+
+在传递参数时由于值传参其效率较低,考虑使用引用.
+如果不涉及修改,使用引用时应用const修饰防止原内容被意外修改.
+总结: 使用const引用来传递你的对象;
+
+### C++的默认复制
+
+类结构如下
+```
+class myString{
+private:
+    char* buffer;
+    unsigned int size;
+};
+```
+
+```
+int main(){
+    myString str1 = "this is a string";
+    myString str2 = str1;
+}
+```
+
+此处的复制发生了什么?
+str1的类成员buffer和size被复制到一个新的内存地址,即str2的位置.
+这称作浅拷贝shallow copy.
+此时str1与str2的buffer指向同一个位置,当生命周期结束调用析构函数时,这一位置被delete两次从而报错.
+
+要让str2拥有自己的buffer需要深拷贝deep copy,深度复制要完整地复制对象而不是复制值.一个简单的方法是专门写个方法,但这很低级且麻烦.
+
+### 复制构造函数
+
+copy constructor是为了str2调用的构造函数.
+当你为一个变量赋值:
+```
+int a = b;
+```
+左右两侧的类型相同,此时调用的是一个复制构造函数
+C++自动提供了一个复制构造函数,即刚才默认的浅复制
+```
+myString(const myString& other);
+```
+它只是复制另一个对象的内存,做浅复制
+
+如果我们不希望复制可以这样写:
+```
+myString(const myString& other) = delete;
+```
+unique_ptr也是这样做的来保证它不会被复制.
+为了深度复制,可以重写这个复制构造函数:
+```
+myString(const myString& other){
+    size = other.size;
+    buffer = new char[size+1];
+    // dest,src,size
+    memcpy(buffer,other.buffer,size+1);
+}
+```
+这样我们就自定义了复制行为.
+myString str2 = str1实际上是隐式构造,以str1为参数构造str2.
+
+## 箭头操作符
+
+箭头操作符在90%的情况下都是作为快速解引用使用,但有些情况下重载它将是很好的:
+
+这是一个作用域指针的结构:
+
+```
+class ScopedPtr{
+private:
+    Entity* ptr;
+public:
+    ScopedPtr(Entity* entity) : ptr(entity){}
+    ~ScopedPtr{
+        delete ptr;
+    }
+}
+```
+
+下面将是一个重载->运算符的好场景
+
+```
+int main(){
+    ScopedPtr entity = new Entity();
+    (entity.ptr)->printEntity(); // private class member,can not be done
+}
+```
+
+因为作用域指针的包装,无法如同使用一般指针一样直接使用->
+所以做如下重载:
+```
+public:
+// (LeftObj->) gives the Entity ptr
+Entity* operator->(){
+    return ptr;
+}
+```
+现在就可以方便的使用->访问Entity了:
+```
+int main(){
+    ScopedPtr entity = new Entity();
+    entity->printEntity(); // private class member,can not be done
+}
+```
+
+### 利用->得到偏移量
+
+```
+struct Vector{
+    float x,y,z;
+}
+int main(){
+    int offset = (int) &((Vector*)nullptr) ->z;
+    std::cout<<offset<<std::endl;
+}
+```
+x,y,z将给出0,4,8,对应了他们在结构中的偏移量.
+nullptr的地址值为0,先转化为Vector类型指针,此时Vector->x的寻址方式是在基址上+4;
+利用&取指得到地址,为0+0,0+4,0+8;最后把地址转换为int赋给offset
+
+```
+          |<----  *(0+4) ---->|
+          |                   |
+(int) &   ((Vector*)nullptr)->y
+          |                |
+          |<------ 0 ----->|
+```
+
+在处理字节流时经常需要得到偏移量,这将很有用
+
+## 标准模板库
+
+在实际的工程中我们需要重写很多,因为模板库中的不是很快,最后通常需要创建自己的容器库.
+
+### vector
+
+vector这一名字很有迷惑性,他其实就是动态数组array.
+考虑到在计算机中vector,向量本身就是数组,也可以接受.
+
+```
+struct Vertex{
+    float x,y,z;
+}
+int main(){
+
+    // put type inside the <>
+    std::vector<Vertex> vertices;
+
+    // push_back meaning add
+    vertices.push_back({1,2,3});
+    vertices.push_back({4,5,6});
+
+    // .size() is ok
+    int size = vertices.size();
+    
+    for(int i=0;i<size;i++){
+        std::cout<< vertices[i] <<std::endl;
+    }
+
+    // advanced for loop
+    for(Vertex v : vertices){
+        std::cout<< v <<std::endl;
+    }
+
+    // erace a single vertex,hard to explain
+    vertices.erase(vertices.begin()+1);
+
+    // clear the vector
+    vertices.clear();
+}
+```
+在<>里面填入类型,表示这个vector里面装的内容.
+不同于JAVA,C++中可以往<>添加原语类型
+在C++里填入<int>是完全可以的,而JAVA只能<Integer>
+考虑到vector的复杂程度,确保传参时使用引用传参
+
+### Vector Optimizing
+
+如果Vector被装满了,需要重新找一个足够大的位置重新分配,把原先的内容复制过来并加上新加入的元素.如果我们需要不断地重新分配就会导致效率低下.
+这是一个方向的优化策略,优化复制
