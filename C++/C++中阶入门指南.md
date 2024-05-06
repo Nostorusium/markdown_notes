@@ -36,19 +36,17 @@ Entity()
 
 除此之外还有一个**功能**上的区别
 对于如string类或自定义类对象作为类成员
-在初始化的过程中需要先执行一次默认的构造函数
+在初始化的过程中会执行默认的构造函数
 
 ```
+// constructor
 Entity(){
     name = "unknown";
 }
 ```
 
-即便不在构造函数中给name这一String对象建立实例,它也会自行先运行默认的构造函数.
-在这段constructor中,name先后一共被构造了两次
-第一次是string类的默认构造函数
-第二次则用参数"unknown"重新构造string取代了第一次
-第一次的字符串被直接抛弃 造成性能浪费
+执行Entity构造函数为name赋值前,定义这一string时就已经执行了string的无参构造函数；
+随后重新有参构造取代了第一次的的string
 
 ```
 Entity() : name("TiansuoHaoer"){
@@ -56,34 +54,14 @@ Entity() : name("TiansuoHaoer"){
 }
 ```
 
-而使用初始化成员变量则不会,只会执行一次String的构造函数
-这种区别本质上是因为使用构造函数初始化的本质是赋值操作,在赋值操作中会产生临时对象.
-临时对象的构造函数和析构函数造成了性能损耗,而初始化列表可以避免临时对象.
+而使用初始化成员变量则不会,只会执行一次String的构造函数.
+使用列表初始化性能上的优势是因为:
+使用构造函数初始化的本质是赋值操作,在赋值操作中会产生临时对象,临时对象的构造函数和析构函数造成了性能损耗,而初始化列表可以避免临时对象.
+
 以下为使用初始化列表的场景
 1. const成员变量只能用初始化列表来初始化,它无法在定义时赋值,又因为const也不能在构造函数里赋值
 2. 初始化的数据成员是对象,在使用构造函数赋值时需要创建临时对象额外执行它的构造函数造成性能损耗
 3. 用于引用类型的初始化 引用类型必须有初始值
-
-关于2的更详细说明:
-在类的实例化中,
-```
-Entity e = Entity();
-Entity e = Entity(argument);
-```
-这是常规的显式的实例化
-```
-Entity e;
-Entity e(argument);
-```
-这样也可以实例化,属于隐式创建并自动调用默认和有参构造函数
-在class定义类成员时
-```
-std::string name;
-```
-本身就已经代表了name的实例化了,它调用string类的默认构造函数
-在Entity实例化的同时,要先把其成员string实例化,
-即便Entity的构造函数不对string赋值,其默认构造函数也已经执行了.
-name = "aName"实际上以有参构造函数二次构造
 
 ## 实例化
 
@@ -503,11 +481,12 @@ nullptr的地址值为0,先转化为Vector类型指针,此时Vector->x的寻址�
 
 在处理字节流时经常需要得到偏移量,这将很有用
 
-## 标准模板库
+## std::vector
 
-在实际的工程中我们需要重写很多,因为模板库中的不是很快,最后通常需要创建自己的容器库.
+C++提供了很多std标准模板
+在实际的工程中我们需要重写很多,因为std模板库中的不是很快,最后通常需要创建自己的容器库.
 
-### vector
+### 基本使用
 
 vector这一名字很有迷惑性,他其实就是动态数组array.
 考虑到在计算机中vector,向量本身就是数组,也可以接受.
@@ -553,3 +532,69 @@ int main(){
 
 如果Vector被装满了,需要重新找一个足够大的位置重新分配,把原先的内容复制过来并加上新加入的元素.如果我们需要不断地重新分配就会导致效率低下.
 这是一个方向的优化策略,优化复制
+
+```
+struct Vertex{
+    float x,y,z;
+    Vertex(float x,float y,float z)
+        : x(x),y(y),z(z){}
+    Vertex(const Vertex& vertex)
+        : x(vertex.x),y(vertex.y),z(vertex.z){
+        std::cout << "copied" << std::endl;
+    }
+}
+
+int main(){
+    std::vector<Vertex> vertices;
+
+    // copied twice
+    vertices.push_back({1,1,4});
+    vertices.push_back({5,1,4});
+
+    // copied 4 times
+    vertices.push_back(Vertex(1,1,4));
+    vertices.push_back(Vertex(5,1,4));
+}
+```
+后一种方法每次push_back都要复制2次.
+
+1. Vertex先在main的堆栈(此处为栈)中被构造,随后被复制到vector里去.如果能在合适的地方构造它就可以省去复制这个过程
+
+2. vertices的capacity随着push_back不断增长,当超过了容量就需要重新找地方重新分配.如果能提前获知所需要的容量就可以省去这个步骤.
+
+```
+int main(){
+    std::vector<Vertex> vertices;
+    vertices.reserve(2);
+    vertices.push_back(Vertex(1,1,4));
+    vertices.push_back(Vertex(5,1,4));
+}
+```
+
+使用reserve来为vector指定一个大小,表示直接找2个Vertex大小的内存用以储备.
+这样运行后只会复制两次,我们成功省去了vector长度增长后重新分配空间的过程
+注意这不同于resize或者在构造函数中写:
+```
+std::vector<Vertex> vertices(3);    // wrong
+```
+这段代码的含义是构造3个顶点对象,而不是分配3个Vertex大小的内存空间.
+目前我们只希望vector有足够的内存容纳vertex作为储备. 
+
+```
+int main(){
+    std::vector<Vertex> vertices;
+    vertices.reserve(2);
+    vertices.emplace_back(1,1,4);
+    vertices.emplace_back(5,1,4);
+}
+```
+
+更进一步,改用emplace_back直接在vector中构造对象而不是复制过去.
+此时执行,Vertex一次也不会被复制.
+
+## C++ Library
+
+库里通常分为两部分:include 与 library.
+include目录存放头文件,library目录存放二进制文件.
+静态链接通常更快,因为编译器或者链接器实际上可以执行某种优化.
+.dll为动态链接库 .lib为静态链接库

@@ -547,13 +547,20 @@ namespace space{ // OK
 
 ## 面向对象
 
+
+### class与struct的区别
+
+struct在C++中唯一的存在理由是为了保持对C的兼容
+如果你希望所有成员变量都是public,那就是用struct.
+class的好处是提供了如private,protected之类关键字方便封装
+对于何时使用class/struct,没有正确答案,取决于代码风格
+
 ### class
 
 较好的组织方法是把类的声明存入.hpp 类方法只写声明,在.cpp里实现
 
 不定义构造函数默认会构造一个空的构造函数
 如果在constructor申请了堆区空间那么在destructor去释放他们是非常自然的
-
 
 ### 继承和多态
 
