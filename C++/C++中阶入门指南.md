@@ -558,7 +558,7 @@ int main(){
 ```
 后一种方法每次push_back都要复制2次.
 
-1. Vertex先在main的堆栈(此处为栈)中被构造,随后被复制到vector里去.如果能在合适的地方构造它就可以省去复制这个过程
+1. Vertex先在main的栈中被构造,随后被复制到vector里去.如果能在合适的地方构造它就可以省去复制这个过程.push_back基于复制的,而emplace_back是基于构造的
 
 2. vertices的capacity随着push_back不断增长,当超过了容量就需要重新找地方重新分配.如果能提前获知所需要的容量就可以省去这个步骤.
 
@@ -592,9 +592,266 @@ int main(){
 更进一步,改用emplace_back直接在vector中构造对象而不是复制过去.
 此时执行,Vertex一次也不会被复制.
 
-## C++ Library
+## @TODO C++ Library 
 
 库里通常分为两部分:include 与 library.
 include目录存放头文件,library目录存放二进制文件.
 静态链接通常更快,因为编译器或者链接器实际上可以执行某种优化.
 .dll为动态链接库 .lib为静态链接库
+
+
+## 模板 Templates
+
+从JAVA或者C#看template可能认为它是一种**泛型**,但远比泛型强大.
+
+template允许你根据用途来编译,让编译器基于一些规则为你编写代码
+编写模板实际上就像创造一个蓝图.
+
+一个使用模板的场景是编写一类功能相近而参数不同的函数
+如print出int,float,string.
+如果使用重载需要写很多重复代码
+
+```
+template<typename T>
+void print(T value){
+    std::cout<<value<<std::endl;
+}
+int main(){
+    print(114514);          //implicit
+    print(1919810);
+    print<float>(114.514);  //explicit
+}
+```
+在尖括号里给typename取一个名字T,用T代表一类类型.
+尖括号内<>写入的是模板参数,可以是typename,class
+在使用时可以隐式或显式的在<>内写入类型.
+
+要注意template只是一个模板,在调用时才被真正的创建.
+如果从来都没有调用过,则这个函数根本都不存在,这也意味着模板内部的语法错误不会被识别,
+直到编译器自动构建它的内容.
+
+模板也可以用作类,参数也可以不止一个.
+```
+template<typename T,int N>
+class Array{
+private:
+    T array[N];
+public:
+    T getsize() const{
+        return N;
+    }
+};
+```
+这个例子里数组的长度由运行时决定.
+
+```
+int main(){
+    Array<int,10> array;
+    Array<std::string,10> stringList;
+    std::cout<<array.getsize()<<std::endl;;
+}
+```
+int和10作为模板参数传入并作为T与N
+继而创建了长度为10的int数组
+
+在写例如日志系统,材料系统的时候,模板将非常有用.
+
+## 宏 Macro
+
+宏在预处理器处理后只做纯文本替换
+
+```
+#include<iostream>
+#define WAIT std::cin.get()
+int main(){
+    WAIT;
+}
+```
+
+不要用宏这样做,因为别人看到WAIT不知道它代表什么
+
+```
+#define LOG(x) std::cout<<x<<std::endl
+```
+
+宏里允许有这样的参数.
+
+考虑这样一个场景: 你开发的应用里有Log日志系统,用于在debug时使用,而你不希望在Release版本里包括日志
+所以可以使用宏来实现:
+
+```
+#ifdef MY_DEBUG
+#define LOG(x) std::cout<<x<<std::endl
+#else
+#define LOG(x)
+#endif
+```
+
+在编译debug时,让预处理器定义一个MY_DEBUG,这样宏就会正确的使用LOG(x)
+在编译release时不做这个定义,那么就会使用第二个LOG(x),其没有任何作用,并且连带着;一同清空
+具体对预处理器的操作可以使用cmake;
+定义也可以有具体值:MY_DEBUG == 1;
+
+```
+#ifdef MY_DEBUG == 1
+#define LOG(x) std::cout<<x<<std::endl
+#elif defined(MY_RELEASE)
+#define LOG(x)
+#endif
+```
+
+定义宏时可以使用\反斜杠来换一行,因为宏定义是按行的,用回车会被认为结束定义
+
+```
+#define MAIN int main()\
+{\
+    std::cout<<x<<std::endl;\
+}
+```
+
+## auto
+
+auto的出现让C++变成一个弱类型的语言,你可以到处乱用auto.
+总的来说auto的使用也取决于代码风格.
+下面是一个使用auto的场景
+
+```
+std::string getName1(){
+    return "Rua1";
+}
+char* getName2(){
+    return "Rua2";
+}
+```
+
+尽管都是返回一个字符串但他们的类型不同;
+
+```
+int main(){
+    auto name1 = getName1();
+    auto name2 = getName2();
+}
+```
+
+使用auto的好处之一就是当你改变了api,改变了返回类型,变量不必跟着改变,auto会自动识别.
+但其坏处就是这种改动会破坏依赖其类型的功能:
+比如当返回类型从String类变成char*,那么name.size()便不再有效.使用auto也会破坏一些可读性.
+在这种情况下就最好不要使用auto.
+
+而下面是一个适合使用auto的场景:
+下面的例子中使用了迭代器,日后介绍
+
+```
+int main(){
+    std::vector<std::string> strings;
+    strings.push_back("name1");
+    strings.push_back("name2");
+    for(std::vector<std::string>::iterator it = strings.begin(); it!=strings.end();it++){
+        std::cout<< *it <<std::endl;
+    }
+}
+```
+
+在定义迭代器it时可以注意到写了一大长串,这个时候用auto代替将是极好的
+
+```
+for(auto it = strings.begin(); it!=strings.end();it++){
+        std::cout<< *it <<std::endl;
+}
+```
+
+用auto代替一大长串类型定义将是极好的
+而对于一般类型例如int,string使用auto只会降低他的可读性.不要在这些简单类型上用auto
+
+从C++11之后,auto可以用于跟踪返回类型
+```
+auto getName() -> char*{
+    return "ruarua";
+}
+``` 
+
+## std数组
+
+```
+#include<array>
+int main(){
+    std::array<int,5>;
+}
+```
+其使用与C风格的array一模一样,但它提供了.size(),并且支持越界检查,越界的语句不会有任何作用.
+其性能和原生数组差不多.
+尽管.size()会返回其长度,但实际上std数组并不实际存储数组长度,size()会把泛型中的"5"直接返回,所以并没有占据额外的空间.
+
+当你想使用一个函数打印数组时,若使用普通数组则把数组长度作为参数写入;
+而使用std数组,但仍需要在类型中的<>写入其长度.在这方面std数组没有优势;
+但std数组仍有很大的优势,它支持迭代器,支持sort排序,同时维持了size.
+所以尽可能的使用std数组,它的性能与原生数组相差无几
+
+## 函数指针
+
+函数指针非常raw style,允许把函数赋值给变量或者作为函数的参数.
+
+```
+void HelloWorld(){
+    std::cout<<"Hello World!"<<std::endl;
+}
+
+int main(){
+    auto function = HelloWorld;     // a function pointer
+    auto function = &HelloWorld;    // the same
+
+    function();                     // call HelloWorld
+}
+```
+
+函数只是一堆CPU指令,以某种方式存储在二进制文件中.
+此时它的类型是void(*functionName)()
+void表示它的返回值
+此处第一个括号里*号后面需要一个名字;
+第二个括号表示所指函数需要的参数
+之所以有第一个括号是因为如果不加第一个括号他会被误认为是void* name()
+
+```
+void(*function)() = HelloWorld;
+```
+
+由于写起来比较麻烦所以多数情况下会使用auto或typedef
+```
+int main(){
+    typedef void(*functionPtr)();   // use "functionPtr" to represent void(*name)()
+    functionPtr function = HelloWorld;
+}
+```
+
+当含有参数:
+
+```
+void HelloWorld(int a){
+    std::cout<<"Hello World! with value:"<< a <<std::endl;
+}
+int main(){
+    typedef void(*functionPtr)(int);
+    functionPtr function = HelloWorld;
+    function(114514);
+    function(1919810);
+}
+```
+
+一个使用函数指针的场景:
+
+```
+void printValue(int value){
+    std::cout<<value<<std::endl;
+}
+
+void forEach(const std::vector<int>* values,void(*func)(int)){
+    for(int value:values){
+        func(value);
+    }
+}
+
+int main(){
+    std::vector<int> values = {1,1,4,5,1,4};
+    ForEach(values,PrintValue);
+}
+```
