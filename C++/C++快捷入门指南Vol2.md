@@ -1,4 +1,6 @@
-# C++中阶入门指南
+# C++快捷入门指南Vol.2
+
+**C++ fast Amateur Tutorial Vol.2**
 
 ## 初始化成员列表
 

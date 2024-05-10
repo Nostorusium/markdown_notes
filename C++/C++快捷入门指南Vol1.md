@@ -1,6 +1,6 @@
-# C++快捷入门指南
+# C++快捷入门指南Vol.1
 
-C++ Amatur Tutorial
+**C++ fast Amateur Tutorial Vol.1**
 
 ## 一些基础语法
 
