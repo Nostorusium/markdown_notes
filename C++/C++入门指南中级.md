@@ -407,6 +407,7 @@ unique_ptr也是这样做的来保证它不会被复制.
 myString(const myString& other){
     size = other.size;
     buffer = new char[size+1];
+
     // dest,src,size
     memcpy(buffer,other.buffer,size+1);
 }
@@ -928,3 +929,54 @@ auto f = [](auto a,auto b){
 
 Lambda内部不能修改值传递捕获的变量
 如果需要则使用在specs使用mutable,且这种修改不影响原先值
+
+## namespace
+
+不要滥用using namespace std;
+using namespace是有作用域的.
+显式写出std::的好处是你不必考虑它的来源是std还是自定义的实现.
+
+```
+namespace apple{
+    void print(const std::string& string){
+        std::cout << string << std::endl;
+    }
+}
+namespace orange{
+    void print(const char* string){
+        std::cout << string << std::endl;
+    }
+}
+
+using namespace apple;
+using namespace orange;
+
+int main(){
+    print("wtf,who am i?);
+}
+```
+在这种情况下会调用orange的print.
+因为main中传递进来的字符串是一个const char*,他更符合orange对参数的要求,尽管它可以通过隐式构造成为string满足apple的参数要求.
+这并不是一个编译时的错误,而是一个运行时才会出现的问题,这样乱用using namespace将导致地狱级的debug
+
+基于同样的原理,**绝对不要**在头文件中使用命名空间,没人会知道#include进来了什么namespace.而且编译不会报错,难以追踪.
+
+尽可能不要使用using namespace std.
+如果一定要使用using namespace,在作用域有限的小范围内且不会引起歧义的地方使用.
+
+
+namespace同时支持别名与内部嵌套.
+```
+namespace b{
+    namespace c{
+        void print(){
+        std::cout<<"this is b::c::print()"<<std::endl;;
+        }
+    }
+}
+
+// alias is ok:
+namespace a = b::c;
+a::print("hello!");
+```
+using a::print();指定了print()的来源,同理只在小范围内使用using
