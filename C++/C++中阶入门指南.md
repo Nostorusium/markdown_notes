@@ -846,7 +846,7 @@ void printValue(int value){
     std::cout<<value<<std::endl;
 }
 
-void forEach(const std::vector<int>* values,void(*func)(int)){
+void forEach(const std::vector<int>& values,void(*func)(int)){
     for(int value:values){
         func(value);
     }
@@ -859,3 +859,72 @@ int main(){
 ```
 
 ## Lambda
+
+
+Lambda也叫匿名函数/闭包
+是一个即用即抛的一次性小函数,他并不是一个正式的函数,也不作为符号存在于符号表.
+我们希望随手定义这样的函数并把它作为参数给别的函数调用,这也意味着他需要一个函数指针.
+比如在排序的时候让sort根据我们指定的代码来排序
+
+```
+void forEach(const std::vector<int>& values,void(*func)(int)){
+    for(int value:values){
+        func(value);
+    }
+}
+int main(){
+    std::vector<int> values = {1,2,3,4,5};
+    
+    auto lambda = [](int value){
+        std::cout<<value<<std::endl;
+    };
+    forEach(values,lambda);
+}
+```
+
+延续函数指针的例子,在main中的forEach使用Lambda.
+forEach所需的函数指针本质上定义了lambda需要什么:返回void,接受int.
+forEach中的func类似一个API接口,我们希望后续把函数传递给它.
+
+```
+// lambda basic syntax
+[captures](params) specs { body }
+```
+
+[]中捕获外围的变量,可以写入=或者&表示以值传递或者引用传递所有封闭范围内的变量
+如果写入变量,默认使用值传递.&表示引用传递
+
+```
+[&,=N]
+```
+含义是N按值捕获,以外的所有变量按引用捕获
+可以加入->来显式说明返回值,但不写也可以
+
+```
+int value = 100;
+int i = 10;
+
+auto lambda = [&value,i](int i)->void{
+    value = i*value;
+}
+```
+
+[this]可以捕获当前实例的指针
+C++17之后[*this]表示按值捕获该实例
+C++14之后,捕获语句中也可以自定义新变量:
+
+```
+auto f = [N,&M,K=5](int i){
+    ...
+};
+```
+C++14之后参数列表支持使用auto,匿名函数更通用,更泛型
+
+```
+auto f = [](auto a,auto b){
+    return a+b;
+};
+```
+
+Lambda内部不能修改值传递捕获的变量
+如果需要则使用在specs使用mutable,且这种修改不影响原先值
