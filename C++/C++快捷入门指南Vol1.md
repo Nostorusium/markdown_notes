@@ -583,6 +583,11 @@ public:
 }
 ```
 父类中private不会被继承,如果想继承的同时又保持其不被外部类访问应使用protected
+子类不会继承基类的constructor与destructor
+不继承基类的运算符重载和友元函数.
+
+子类实例化时会默认使用基类的默认构造函数.
+即先调用基类构造函数再调用子类构造函数.
 
 ### 虚函数 Virtual Function
 
