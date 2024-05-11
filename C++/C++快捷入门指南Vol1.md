@@ -584,7 +584,7 @@ public:
 ```
 父类中private不会被继承,如果想继承的同时又保持其不被外部类访问应使用protected
 
-### 虚函数
+### 虚函数 Virtual Function
 
 ```
 class Entity{
