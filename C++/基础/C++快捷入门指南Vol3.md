@@ -281,8 +281,6 @@ if(dynamic_casting<Player*>(actuallyEnemy) != NULL){
 }
 ```
 
-## @TODO Benchmarking 基准测试
-
 ## structeds bindings 结构化绑定
 
 C++17的新特性,让我们更好的处理多个返回值
@@ -401,19 +399,3 @@ std::string value = data.value_or("Not Present");
 ```
 出于习惯,有时会为未成功读取的情况下设一个默认值.
 使用value_or,如果成功读取那就用读取值,不然就用我们给出的默认值.
-
-## std::variant 单一变量存放多类型数据 
-
-## std::any 单一变量存放任意类型数据
-
-## std::async
-
-## 让字符串更快
-
-## 单例模式Singleton
-
-## 左右值
-
-## 移动语义 move
-
-## 迭代器Iterator
