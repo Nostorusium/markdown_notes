@@ -280,8 +280,8 @@ map提供了任意类型向任意类型的映射.
 - 无序性:key无序
 
 map满足互异性,但不满足无序性(从小到大).
-unordered_map则都满足.
-multimap则都不满足.
+**unordered_map** 则都满足,底层是哈希表.
+**multimap** 则都不满足,底层是红黑树
 
 #### 构造与用法
 
@@ -294,7 +294,7 @@ mp1[2] = 1;
 mp1[1] = 2;
 mp1.erase(2);
 
-if(mp1.find(2) != mp1.end()){ //find查询的是value
+if(mp1.find(2) != mp1.end()){ //find查询的是key
   cout << "yes" << endl;
 }else{
   cout << "no" << endl;
@@ -330,6 +330,8 @@ for(int i=0;i<words.size();i++){
 ```
 
 当使用中括号访问一个不存在的key,会默认创建这个key并赋初值为0.
+
+find()若找不到key,则返回尾迭代器.
 
 ### String
 
