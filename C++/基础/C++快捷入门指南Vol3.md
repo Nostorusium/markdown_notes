@@ -2,12 +2,6 @@
 
 **C++ fast Amateur Tutorial Vol.3**
 
-## @TODO:线程Thread
-
-使用thread.join()来等待该线程执行完毕.
-
-
-
 ## 计时 timing
 
 善用计时来看看实际运行代码需要的时间,判断优化的好坏.
@@ -48,7 +42,7 @@ public:
     ~Timer(){
         end = std::chrono::steady_clock::now();
         duration = start - end;
-        float ms = duration.count*1000;
+        float ms = duration.count()*1000;
         std::cout<<"Timer took: "<< ms<<" ms\n";
     }
 };
