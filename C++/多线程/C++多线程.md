@@ -975,8 +975,14 @@ void msgServer::stop(){
 }
 ```
 
-
 这样就可以保证线程的正常退出.
+
+>先解锁再通知
+>考虑两个线程,其中一个线程因条件变量放弃了锁并阻塞等待通知
+>另一个线程持有锁,但在锁内释放
+>这导致当前一个线程接到通知准备重新持有锁时该锁仍被第二个线程占用
+>如果锁内仍有其他逻辑,结果就是第二个线程仍需要较长时间占用该锁
+>而第一个线程仍无法参与对锁的争用.
 
 ## 线程异步
 
@@ -989,8 +995,9 @@ void msgServer::stop(){
 ### promise与future
 
 C++11引入了 std::promise 和 std::future 两个模板类,用于实现异步.
-std::promise用于在某线程中设置某个值或异常
-std::future用于在另一线程中获得这个值或异常.
+std::promise内部可以存储一个值,并由future获得.
+std::future可由promise构造出,并与promise绑定.
+用future的get()获得promise的值是一次性的,且未设置时会阻塞.
 
 ```
 void func(promise<int> p){
@@ -1002,7 +1009,7 @@ int main(){
     promise<int> promise;
     // 2. 由promise构建他的future
     auto future = promise.get_future();
-    // 3. 启动线程 以引用传递promise
+    // 3. 启动线程 以右值引用传递promise
     thread th(func,move(promise));
     // 4. 通过future获得值
     cout << future.get() <<endl;
@@ -1030,9 +1037,13 @@ future<_Res> get_future()
 }
 ```
 
->如果线程1需要线程2的数据
->那么线程1需要promise承诺,并把promise传递给线程2表示2承诺向1给数据
->future表示期待着接受被承诺的数据
+>promise,表示承诺可以拿出一个值
+>future,表示将来可以获得一个值.
+>由于线程间共享地址空间,线程1创建了promise并派生出其future
+>线程2再往promise里写入值
+>那么线程1再从该future中取出值即可
+>关键在于线程强调了共享,为了保证两个线程操作的是同一个promise
+>创建线程传递参数时才需要右值引用传递
 
 ### packaged_task
 
@@ -1268,3 +1279,256 @@ C++17支持.
 MinGW不支持execution 算了
 
 ## 线程池
+
+分析一下线程池的组成
+
+- 一组线程,随时准备处理task
+- 一个task队列,存储待处理的task
+- 对线程池本身的控制函数
+- 线程的入口函数,应当能完成task处理,并能够正常退出
+- task本身的内容
+
+```
++-----------------+
+|mutex        pool|
+|cond             |
+|   +---------+   |   +---------------+
+|   | threads +------>+th1|th2|th3|...+<-------+
+|   +---------+   |   +---------------+        |
+|                 |                         getTask
+|   +---------+   |   +---------------+        |
+|   |  tasks  +------>+t1|t2|t3|t4| | +--------+
+|   +----+----+   |   +---------------+
+|        |        |                ^
++-----------------+                |
+         |                         |
+         |                         |
+         +-------+ addTask +-------+
+
+```
+
+### Task与Pool
+
+```
+class Task{
+public:
+    virtual int run() = 0;
+    std::function<bool()> is_exit = nullptr;
+};
+
+```
+
+定义一个简单的task基类,其继承类重写run()来完成自定义内容.
+使用std::function来保存ThreadPool的isExit()方法
+这样Task也实现了判断是否退出.
+
+```
+class ThreadPool{
+private:
+    //default num: 0
+    int threadNum = 0; 
+    std::mutex mux;
+    // 用指针,避免复制开销
+    std::vector<std::thread*> threads;
+    // 任务列表
+    std::list<Task*> tasks;
+    // 条件变量
+    std::condition_variable cond;
+    // 退出flag
+    bool is_exit = false;
+    // 线程池线程的入口函数
+    void runThread();
+public:
+    // 初始化线程池 给定thread num
+    void init(int num);
+    // 启动线程 启动前需init
+    void start();
+    // 退出线程池
+    void stop();
+    void addTask(Task* task);
+    Task* getTask();
+    bool isExit();
+};
+```
+
+以上为一个简单的线程池定义.
+
+```
+void ThreadPool::init(int num){
+    unique_lock<mutex> lock(mux);
+    this->threadNum = num;
+    cout<<"[ThreadPool] thread num: " << num << endl;
+}
+```
+
+初始化只需设置启动线程数量即可.
+对于线程池本身的操作,需加锁.
+
+```
+void ThreadPool::start(){
+    unique_lock<mutex> lock(mux);
+    if(threadNum<=0){
+        cerr<<"[ThreadPool] Not Initilized."<<endl;
+        return;
+    }
+    if(threads.empty()==false){
+        cerr<<"[ThreadPool] Has Started."<<endl;
+        return;
+    }
+    for(int i=0;i<threadNum;i++){
+        // new 返回指针
+        auto th = new thread(&ThreadPool::runThread,this);
+        threads.push_back(th);
+    }
+}
+```
+
+线程池的start()则正式启用对应数量的线程,并用list存储.
+
+```
+// 线程池退出
+void ThreadPool::stop(){
+    std::cout<<"[ThreadPool] stopping... "<<std::endl;
+    // 要等待其他线程依次执行完毕所以先别加锁
+    is_exit = true;
+    cond.notify_all();
+    for(auto &th:threads){
+        th->join();
+    }
+    // 此时子线程执行完毕,加锁清空
+    unique_lock<mutex> lock(mux);
+    threads.clear();
+}
+```
+
+在线程池退出时要注意.
+1. 标志位设置为退出
+2. 发出notify,清除阻塞,让子线程中判断退出的代码得以运行
+3. 依次join()线程,准备退出
+4. 最后再加锁清空线程池本身的threads队列.
+
+不可以直接加锁,因为线程池所在的主线程与各子线程共享这同一个锁.
+若主线程提前持有该锁,则子线程可能会因此陷入阻塞.
+若子线程此时正持有锁,则主线程需要参与对该锁的争用才能进一步执行退出.
+
+换另一个角度看,设置退出并不需要严格互斥,因此不算临界区,也无需加锁.
+锁只需括住对线程池本身结构threads的clear()即可
+
+
+
+```
+void ThreadPool::runThread(){
+    cout<<"[ThreadPool] thread "<<this_thread::get_id()<<" start."<<endl;
+
+    while(is_exit == false){
+        // 为了防止一直循环,在getTask中加入了条件变量来阻塞
+        auto task = getTask();
+        if(task == nullptr){
+            continue;
+        }
+        try{
+            task->run();
+        }catch(...){
+            // do nothing here for now
+        }
+    }
+    cout<<"[ThreadPool] thread "<<this_thread::get_id()<<" end."<<endl;
+}
+```
+
+子线程的入口函数,使用循环来索取task.
+考虑到一直循环会导致CPU资源的消耗,应当加以阻塞机制.
+这一点在getTask中实现.
+
+```
+// addTask由主线程执行
+void ThreadPool::addTask(Task* task){
+    unique_lock<mutex> lock(mux);
+    // 让task能够判断线程池的退出情况
+    task->is_exit = [this]{
+        return isExit();
+    };
+    tasks.push_back(task);
+    // 记得先解锁再通知
+    lock.unlock();
+    cond.notify_all();
+}
+```
+
+在addTask时把判断退出状态的isExit()函数赋给Task中的functional结构,以实现Task对状态的访问.
+其中使用了条件变量,当添加了一个task就发出通知以表示当前任务列表不空,阻塞的线程可以继续运行.
+
+```
+// getTask由子线程执行
+Task* ThreadPool::getTask(){
+    unique_lock<mutex> lock(mux);
+    if(is_exit == true){
+        // 返回nullptr,让子线程进入下一轮循环判断然后退出
+        return nullptr; 
+    }
+    if(tasks.empty()){
+        // 直接阻塞线程
+        // 等待主线程塞入task通知
+        cond.wait(lock);
+    }
+    // notify后,解除wait状态并重新争用锁
+    // 然而未能第一时间抢占该锁,导致task被其他线程拿去.
+    if(tasks.empty()){
+        return nullptr;
+    }
+
+    auto task = tasks.front();
+    tasks.pop_front();
+    return task;
+}
+```
+
+子线程使用getTask从tasks列表中获得task执行.
+首先应该判断退出,如果线程池已退出则返回nullptr让入口函数进行下一步的退出工作.
+如果tasks列表已空,使用条件变量阻塞,直到收到了来自addTask函数的notify,表示刚刚新添加了一个任务.
+注意到addTask中的cond使用了notify_all,这也意味着因此条件变量阻塞的子线程都要参与对锁的竞争.
+
+当该线程收到信号并重新获得了锁的所有权后继续执行,此时并不意味着能够拿到Task.
+很有可能别的线程先于该线程拿到了锁继而拿到了task,导致当前线程运行时tasks列表仍为空.
+因此需要再次判断.
+
+### 智能指针
+
+上一节中实现的实现有内存泄漏的风险,即task与thread皆以new创建,而不曾有释放.
+使用shared_ptr是一个较好的选择.
+
+>智能指针review
+>智能指针利用栈的特性在脱离作用域时析构
+>smart_pointer在引用计数归零时销毁.
+>智能指针可接受一个指针为参数为构造
+>make方法可以根据类型直接构造,比(new)更方便
+
+```
+// ok
+myTask* t1 = new myTask();
+shared_ptr<myTask> task1(t1);
+
+// suggested
+shared_ptr<myTask> task2 = make_shared<myTask>();
+
+// suggested
+auto task3 = make_shared<myTask>();
+```
+
+将原有结构的指针都换成智能指针,
+包括tasks列表与threads数组.
+
+```
+// ThreadPool::start()
+
+for(int i=0;i<threadNum;i++){
+  // new 返回指针
+  // auto th = new thread(&ThreadPool::runThread,this);
+  // 智能指针版本 参数不变
+  auto th = make_shared<thread>(&ThreadPool::runThread,this);
+  // 值传递,为复制,引用复制+1
+  threads.push_back(th);
+}
+```
+
+### 异步
