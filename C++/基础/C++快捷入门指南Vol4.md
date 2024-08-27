@@ -45,6 +45,9 @@ Singleton Singleton::instance;
 2. 对它的初始化触发了构造函数,这个instance被初始化为一个正经的实例
 3. 理论上我们已经可以通过Singleton::instance来访问它了,但由于它被设置为private,所以应使用public的get()函数来获得它.
 
+> 类的静态成员不是对于对象的,而是对于类本身的
+> 他们的使用都是类名::成员名.
+
 ## 左右值
 
 左右可以理解为等号的左右.

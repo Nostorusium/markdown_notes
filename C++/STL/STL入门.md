@@ -1,4 +1,4 @@
-# 标准模板库 Standard template Library
+# 标准模板库 Standard Template Library
 
 STL从广义上分为容器container,算法algorithm,迭代器iterator.
 STL几乎所有的代码都采用模板类或模板函数,提供了更好的代码重用机会.
@@ -8,14 +8,14 @@ STL是一种泛型编程(generic programming).
 而泛型编程关注的是算法,旨在编写独立于数据类型的代码.
 模板让这一切成为了可能,但必须对元素进行精心的设计.
 
-STL六大组件如下
+STL六组件如下
 
 - 容器:存放数据
 - 算法:操作数据
 - 迭代器:遍历容器各元素
 - 仿函数:为算法提供更多策略
-- 适配器:为算法提供更多参数接口
-- 空间配置器:为算法和容器动态分配,管理空间
+- 适配器:提供更多参数接口
+- 分配器:?
 
 ## 迭代器
 
@@ -82,6 +82,10 @@ vector<int> array;
 vector<int> array(100); //长度为100
 vector<int> array(100,114514); //初始值为114514
 vector<vector<int>> dp(5,vector<int>(6,114514)); //五行六列初值为114514的二维数组
+
+vector<int> a = vector<int>(4); //显式构造
+
+vector<int> ruarua = {1,1,4,5,1,4}; //C++11 支持列表初始化
 ```
 
 以下写法不推荐
@@ -302,7 +306,7 @@ if(mp1.find(2) != mp1.end()){ //find查询的是key
 
 // 迭代器遍历
 for(map<int,int>::iterator it = mp.begin();it!=mp.end();++it){
-  cout<< it->first << ' ' << it->second <<> endl; //用pair存的 打印
+  cout<< it->first << ' ' << it->second << endl; //用pair存的 打印
 }
 // 范围for遍历
 for(auto&pr : mp){
@@ -325,7 +329,7 @@ words.push_back("ruarua");
 words.push_back("114514");
 
 for(int i=0;i<words.size();i++){
-  mp[words[i]]++;
+  times[words[i]]++;
 }
 ```
 
