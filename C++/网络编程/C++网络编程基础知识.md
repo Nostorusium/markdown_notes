@@ -185,6 +185,8 @@ struct sockaddr_in{
 };
 ```
 
+in表示internet,sin表示socketInternet
+
 这sockaddr和sockaddr_in结构体内存大小完全相同。
 由于sockaddr写入端口ip不方便，通常使用sockaddr_in进行初始化，然后强转成sockaddr。
 
@@ -270,6 +272,7 @@ ssize_t send(int sockfd, const void *buf, size_t len, int flags);
 
 buf为所传入的数据，len指定传入多少字节。(比如一个1919810大小的buf,而只传输前114514有效数据。)
 返回值：实际发送的字节数，和参数len相等。若为-1表示失败。
+不管是read还是wrtie,都是从fd读n个字节的数据并放在buff中
 
 7. 关闭套接字
 
@@ -306,3 +309,111 @@ close() returns zero on success.  On error, -1 is returned, and errno is set app
 这个缓冲区就好比是你家门口的邮箱，送信都要通过这个邮箱。发送数据要先把数据放邮箱里，传送过去后，接受数据要从邮箱里往外拿。
 
 accept是阻塞的，它所检测的是监听lfd的连接队列(读缓冲区)。如果没数据则阻塞，直到新的连接进来。
+
+### socket服务器实践
+
+```
+// 1. socket 监听用
+// Address Family Internet的缩写 代表ipv4
+int lfd = socket(AF_INET,SOCK_STREAM,0);
+if(lfd == -1){
+  perror("socket");
+  return -1;
+}
+// 2. bind到本地端口
+struct sockaddr_in laddr;
+laddr.sin_family = AF_INET;
+laddr.sin_port = htons(8888); //0~65535 最好5000以上
+// 绑定一个0地址，那么在服务器端会自动读取网卡ip
+laddr.sin_addr.s_addr = INADDR_ANY; //0 = 0,0,0,0 自动读取实际ip
+int ret = bind(lfd,(struct sockaddr*) &laddr,sizeof(laddr));
+if(ret == -1){
+  perror("bind");
+  return -1;
+}
+// 3. listen 启用监听fd
+ret = listen(lfd,128);
+if(ret == -1){
+  perror("listen");
+  return -1;
+}
+```
+首先是监听三连：socket,bind,listen,至此就成功申请好了一个用于监听的socket和fd
+这个socket/fd专门用于监听连接的到来。
+
+
+```
+// 4. accept获得新socket和新fd
+struct sockaddr_in accept_addr;
+unsigned int accept_addr_length = sizeof(accept_addr);
+int cfd = accept(lfd,(struct sockaddr*)&accept_addr,&accept_addr_length);
+if(cfd == -1){
+  perror("accept");
+  return -1;
+}
+```
+
+accept从连接队列中取出一个连接，建立一个新的socket用于数据通信并返回它的fd。
+这个操作是阻塞的。
+
+```
+// 5.通信
+while(1){
+  // 接受数据
+  char buf[1024];
+  int len = recv(cfd,&buf,sizeof(buf),0);
+  if(len>0){
+      std::cout<<"client:"<<buf<<std::endl;
+      send(cfd,buf,len,0);
+  }else if(len == 0){
+      std::cout<<"Client Disconnected\n";
+      break;
+  }else{
+      perror("recv");
+      break;
+  }
+}
+```
+服务端调用recv/read函数获得数据时，也是阻塞的。如果客户端不给服务器发数据就会阻塞在recv的位置。
+
+调用send函数发送数据时，我们实际上在往这个socket的写缓冲区里写数据。如果写缓冲区满了，也会阻塞。
+
+```
+// 释放fd
+close(lfd);
+close(cfd);
+return 0;
+```
+
+这是一个单进程/单线程的服务器，在这个处理逻辑里一共有三处可能导致阻塞的地方：
+1. 获得连接
+2. 读数据(读缓冲区为空)
+3. 写数据(写缓冲区已满)
+
+因此这个服务器进程一旦在某个地方陷入阻塞，整个程序就阻塞住了。因此在单进程/线程中既想让程序接受客户端连接，又想要进行客户端通信是难以实现的：即单线程/进程场景下，服务器无法处理多连接。我们无法实现这种并发。
+而解决方案也有多种，常用的如下：
+1. 多线程/多进程 但肯定多线程更好
+2. IO多路转接（复用）
+3. IO多路复用+多线程缝合
+
+> IO多路复用就是通过一个进程监视多个fd，一旦某个描述符就绪就通知程序进行读写操作的机制。
+> 与多线程相比，IO多路复用的最大优势是系统开销小，无需新建线程。
+> Linux提供了select,poll,epoll系统调用来实现。
+
+### socket多线程服务器
+
+考虑到上文单线程实现中的阻塞情况，我们可以把逻辑拆解到不同的线程里：1个线程用于监听，N个线程用于传输。
+每新建一个连接，就新建一个线程。通常我们可以在主线程进行accept，然后创建子线程。
+
+多个线程共享全局区，堆区，内核区的fd等资源。在多线程情境下要注意线程同步。
+
+### 线程池的利用
+
+线程池的组成主要分为三个部分：
+1. 任务队列
+2. 工作线程：从队列里取出任务执行。若为空则阻塞。
+3. 管理者线程：周期性的堆任务队列的任务数量以及忙状态的线程个数检测，适当调整线程个数
+
+## 多路复用与网络模型
+
+>【网络编程系列(select、poll、epoll、Reactor模型、Proactor模型)】 https://www.bilibili.com/video/BV12U4y167sf
