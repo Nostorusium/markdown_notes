@@ -352,9 +352,8 @@ class QObjectPrivate : public QObjectData {
 };  
 ```
 
-发送signal的对象中,每一个connection都会创建一个Connection对象，并把它存到Lists里去。
-响应signal的对象，同样每个connection都会创建一个sender对象，存入senders列表。
-这样一来,接收方和响应方就彼此"链接"在一起。
+发送signal的对象中,每一个connection都会创建一个Connection对象，并把它存到Lists里去。  
+发送信号的类中，Connection里保存发送信号的对象。响应signal的对象在sender中保存信号的来源。  
 
 要注意,发送方本身维持一个ConnectionLists,每个signal对应了一个list,每个list中包含了一组connection信息.同理,接收方的每个slot对应了一个sender。
 当emit signal时,每个signal都会被moc转化为一个与之相对应的成员函数。
@@ -368,6 +367,7 @@ void ZMytestObj::sigBtnClicked(){
 ```
 
 执行activate后,从connectionLists中取出与之对应的connection信息,然后调用具体的slot.
+因为connection维持了接受者的指针，当信号被activate，就遍历它所维护的所有connection，再由这个指针去执行对应的槽函数。method_index指示执行哪个slot。
 
 ## 对象树
 
