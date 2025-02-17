@@ -1,4 +1,4 @@
-# 机器学习 Part1
+# 机器学习
 
 ## 总览
 
@@ -293,6 +293,25 @@ $\begin{cases}
 >这个做法的依据来源于概率论，当样本足够多其分布将呈现出钟形曲线/高斯分布/正态分布。 $\frac{x-\mu}{\sigma}$ 将数据 x 和总体均值 μ 的差异以标准差 σ 为单位表示，统一了尺度。
 
 作为经验法则，我们总是期望把特征重新放缩到-1~1。对于一些还可以的情况，不放缩也是没问题的。但对于过大或者过小的情况而言，我们仍然需要rescale。
+
+### 反标准化
+
+以Z-score标准化为例，$z_i = \frac{x_i - \mu_i}{\sigma_i}$
+我们期望的格式是这样：$ f = \theta_0 + \theta_1 x_1 + \theta_2 x_2 + \dots + \theta_n x_n $
+而经过标准化，确定参数后得到的格式是这样：
+$ f = \theta_0 + \theta_1 \left( \frac{x_1 - \mu_1}{\sigma_1} \right) + \theta_2 \left( \frac{x_2 - \mu_2}{\sigma_2} \right) + \dots + \theta_n \left( \frac{x_n - \mu_n}{\sigma_n} \right) $
+
+则 $f =  \hat{y} = \left( \theta_0 - \sum_{i=1}^n \frac{\theta_i \mu_i}{\sigma_i} \right) + \sum_{i=1}^n \left( \frac{\theta_i}{\sigma_i} \right) x_i = \frac{(\theta_0' + \theta_1' x_1 + \theta_2' x_2 + \dots + \theta_n' x_n)-\mu_y}{\sigma_y}$
+
+可以得到反标准化后的参数：
+
+\[
+  \theta_0' = \left( \theta_0 - \sum_{i=1}^n \frac{\theta_i \mu_i}{\sigma_i} \right) \cdot \sigma_y + \mu_y
+\]
+
+\[
+  \theta_i' = \frac{\theta_i \cdot \sigma_y}{\sigma_i}
+\]
 
 ### 梯度下降的收敛
 
