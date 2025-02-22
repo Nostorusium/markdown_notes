@@ -67,8 +67,244 @@ $a_1^{[3]} = g(\vec{w_1}^{[3]} · \vec{a}^{[2]} + b_1^{[3]})$  表示第三层�
 
 此处g还有一个名字，叫做**激活函数**(activation function)，因为它输出激活值a。在上文判断衣服畅销的二分例子中，这个激活函数可以是sigmoid函数。在其他情况里也会使用不同的激活函数。
 
-## 前向传播
+## Tensorflow示例
+
+### 前向传播 Forward Propagation
 
 从前到后，从左到右，从0层到最后一层输出，即**前向传播**(forward propagation)。
-与之相对的是**反向传播**(backward propagation)
+与之相对的是**反向传播**(backward propagation)。
 
+我们以tensorflow为例，列举你需要用到的代码。
+
+```
+# 创建层
+layer_1 = Dense(units=3,activation = "sigmoid")
+layer_2 = Dense(units=3,activation = "sigmoid")
+
+# 串联层
+model = Sequential([layer_1,layer_2])
+
+# 给数据 训练集输入特征
+x = np.array([200.0,17,0],
+             [120.0,5.0],
+             [425.0,20,0],
+             [212.0,18.0])
+
+# 目标,yes与no
+y = np.array([1,0,0,1])
+
+model.compile(...)
+model.fit(x,y)
+
+model.predict(x_new)
+
+```
+
+
+你可以使用tensorflow库，用几个函数就轻松的完成前向传播。但下图说明了其代码上的具体原理。
+
+![image not found](./resources/images/2-1.png)
+
+对于给定的特征输入x，layer1中的三个神经元分别根据自己的参数与其得到的输入x进行运算，并输入sigmoid函数。最终我们得到3个 $a^{[1]}_i$ ，他们一同构成本层的输出，并作为下一层的输入，即 $\vec{a}^{[1]} = [a^{[1]}_1,a^{[1]}_2,a^{[1]}_3]$。
+
+更一般地，一个dense层(tensorflow中的layer)中的向后传播可以如下表示：
+
+```
+def dense(a_in,W,b,g):
+    units = W.shape[1] #取参数矩阵的列 即几个神经元
+    a_out = np.zeros(units) #初始化输出激活值
+    for j in range(units):
+        #第一个:表示所有行, 第二个表示j列 即取出W矩阵第j列
+        w = W[:,j]
+        z = np.dot(w,a_in) + b[j]
+        a_out[j] = g(z)
+    return a_out
+```
+
+那么tensorflow函数sequential用来串联几个层。他可以如下表示：
+
+```
+def sequential(x):
+    a1 = dense(x,W1,b1)
+    a2 = dense(a1,W2,b2)
+    a3 = dense(a2,W3,b3)
+    a4 = dense(a3,W4,b4)
+    f_x = a4
+    return f_x
+```
+
+>在使用python应用线性代数时，通常我们约定使用大写字母表示矩阵，小写字母表示向量或者标量。
+
+---
+
+但在强化学习时我们就提到过向量化的重要性，循环的低效，与向量矩阵在现代库中的并行优化。
+所以用大矩阵取代循环是显而易见的：
+
+```
+def dense(A_in,W,B):
+    Z = np.matmul(A_in,W) + B
+    A_out = g(Z)
+    return A_out
+```
+
+### 进一步的训练
+
+```
+model = Sequential([
+    Dense(units=25,activation='sigmoid')
+    Dense(units=15,activation='sigmoid')
+    Dense(units=1,activation='sigmoid')])
+
+from tensorflow.keras.losses import BinaryCrossentropy
+model.compile(loss = BinaryCrossentropy())
+model.fit(X,Y,epochs = 100)
+```
+
+在串联起几个layer之后，第二步要求tensorflow编译模型。一个关键步骤是确定一个**损失函数**。
+此处我们使用 **SparseCategoricalCrossEntropy**, **稀疏多分类交叉熵损失函数**。我们日后讨论这是什么
+
+随后我们调用fit函数，来拟合这个模型。
+此处，**epoch**(时代，纪元)作为一个术语，表示对于像梯度下降这样的学习算法，你想要执行多少步。
+
+---
+
+现在回顾一下过去使用logistic regression的过程。
+
+1. 确定使用sigmoid函数作为f
+
+```
+z = np.dot(w,x) + b
+f_x = 1/(1+np.exp(-z))
+```
+
+2. 确定损失函数与代价函数
+
+```
+loss = -y * np,log(f_x) - (1-y) * np.log(1-f_x)
+```
+
+损失函数评估了单个训练实例的拟合情况，而代价函数则是其加和平均，时对整体的评估。
+
+3. 最后梯度下降最小化J，确定参数
+
+```
+w = w - alpha * dj_dw
+b = b - alpha * dj_db
+```
+
+而在使用tensorflow训练神经网络时，代码如下：
+
+```
+# 1.
+model = Sequential([
+    Dense(...)
+    Dense(...)
+    Dense(...)])
+# 2.
+model.compile(loss = BinaryCrossentropy())
+# 3.
+model.fit(X,y,epochs = 100)
+```
+
+第一步我们确定基本结构，3层隐藏层，使用sigmoid函数作为激活函数。
+第二步我们需要确定损失函数，这也将定义我们用来训练神经网络的成本函数。logistic回归使用的损失函数 
+
+\[L(f(\vec{x}),y) = -ylog(f(\vec{x}))-(1-y)log(1-f(\vec{x}))\]
+
+也叫做**二元交叉熵**(binary cross entropy)。随后我们让tensorflow对这个神经网络进行编译。
+
+如果你想要解决回归问题而非分类问题，你也可以使用不同的损失函数来编译模型。比如：
+
+```
+model.complie(loss = MeanSquaredError())
+```
+
+表示使用**均方误差**作为损失函数。
+根据损失函数确认的代价函数J则包含每一层神经元的所有参数。随后我们使用梯度下降最小化J。即第三步fit。在神经网络中我们使用一种叫做**反向传播**(back propagation)的算法来计算偏导项，即tensorflow在fit函数中做的事情。实际上tensorflow可以使用比梯度下降更快一点的算法。
+
+## 激活函数
+
+$g(z) = \frac{1}{1+e^{(-z)}}$
+
+sigmoid函数，常用于二分类问题。
+
+$g(z) = max(0,z)$
+**ReLU**(rectified linear unit)，整流线性单位。不用关心它是什么意思，这只是作者给这个特定的激活函数取的名字。
+当z小于0，它输出0。若z大于0，它输出z。
+
+$g(z) = z$
+线性激活函数(linear activation function)。有时我们也认为这个函数没有使用任何激活功能，因为它原封不动的把输入交给输出。
+
+---
+
+这可能是迄今为止神经网络中最常用3个的激活函数。
+
+以及softmax，日后讨论
+
+### 激活函数的选择
+
+根据目标y的含义，我们可以自然地为**输出层**选中某个激活函数，
+- 对于一个**二分类**问题，使用sigmoid函数是理所当然的。 
+- 对于一个**有负有正**的**回归**问题，你可以使用线性激活函数，因为它接受正负数。
+- 对于一个特征为**正值**的**回归**问题，你可以使用ReLU激活函数，因为它仅接受正值不然为0。
+
+---
+
+而对于**隐藏层**，使用ReLU是迄今为止最常见的选择。尽管行业早期喜欢使用sigmoid函数作为激活函数，而现在这个领域已经发展到经常地使用ReLU，几乎不怎么使用sigmoid作为隐藏层激活函数。
+
+一方面，sigmoid需要取指数，运算不如ReLU快，而另一方面在数学上的原因更为重要：
+ReLU只在图像的左侧**平坦**，而sigmoid在趋于正负无穷时有2条水平渐近线，即在y=0与y=1处"平坦"。
+
+在你使用梯度下降训练神经网络时，如果一个函数在很多地方都平坦，它的速度会变慢。因为越是平坦，下降时坡度越小，下降得越慢。研究发现使用ReLU可以使神经网络学习得更快一点。
+
+```
+model = Sequential([
+    Dense(units=25,activation='relu')
+    Dense(units=15,activation='relu')
+    Dense(units=1,activation='sigmoid')
+])
+```
+
+对于隐藏层，我们不推荐使用除ReLU以外的任何激活函数。不过如果你查看相关论文，你会发现有时人们也会尝试使用其他激活函数，比如Leaky ReLU，但对于大多数情况以及大多数应用程序而言，ReLU足够用了。
+
+不过这引出了另一个问题：为什么我们需要激活函数？为什么不直接用线性激活函数，或者压根就不用？
+
+### 为什么我们需要激活函数
+
+回到预测衣服价格的例子，如果我们把当时使用的sigmoid激活函数全都替换成线性函数，会发生什么？
+
+事实证明，如果你这么做了，整个神经网络会变得与**线性回归**没有区别。
+考虑一下在几个层级之间，所有的神经元都是用线性激活函数，我们可以视为每传递一层，实际上是对一个线性函数做了线性变化。
+线性代数可以告诉你，一个线性函数的线性函数，仍然是线性的。这意味着你最终输出的结果仍然是线性的，它无法拟合比线性函数更复杂的东西。你只是最终得到了一个关于输入特征的线性函数。
+
+而如果在此基础上，将输出层改为sigmoid函数，隐藏层仍保持线性函数，你可以证明这个模型等价于logistic回归。logistic回归不能做的事情，它依然不能做。这样的设置没有给我们带来任何额外收益。
+
+所以基于经验法则，不要在隐藏层里使用线性激活函数，因为你需要为函数添加非线性的特征。ReLU激活函数足够好了。
+
+## 多类分类 Multiclass Classification
+
+多类分类问题仍然是一个分类问题，因为y只能接受少量的离散范畴。为解决这个问题，我们引入**Softmax回归**，logistic回归的推广。
+
+### softmax回归
+
+二分类时，激活函数输出可以视为：
+$a_1 = g(z) = \frac{1}{1+e^{-z}} = P(y=1|\vec{x})$
+$a_2 = 1 - a_1 = P(y=0|\vec{x})$
+
+$a_1$与$a_2$分别表示了两种分类的概率。
+而在多分类下，我们有多种可能的输出。
+
+![image not found](./resources/images/softmax.png)
+即：
+$z_j = \vec{w_j} · \vec{x} + b_j$
+$a_j = \frac{e^{z_j}}{\sum_{k=1}^{n} e^{z_j}} = P(y=j|\vec{x})$
+其中，$\sum_{i=1}^N a_i = 1$
+>邓肯·卢斯于1959年在选择模型（choice model）的理论基础上发明softmax函数。首先要保证输出非负且其总和为1。其次为了保持可导性，该函数使用exp指数。
+
+如果你在N=2的情况下应用softmax回归，你会发现它和logistic回归基本相同，只是参数有些不同。
+其损失函数为：
+
+```
+
+
+```
