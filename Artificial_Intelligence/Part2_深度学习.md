@@ -302,9 +302,115 @@ $a_j = \frac{e^{z_j}}{\sum_{k=1}^{n} e^{z_j}} = P(y=j|\vec{x})$
 >邓肯·卢斯于1959年在选择模型（choice model）的理论基础上发明softmax函数。首先要保证输出非负且其总和为1。其次为了保持可导性，该函数使用exp指数。
 
 如果你在N=2的情况下应用softmax回归，你会发现它和logistic回归基本相同，只是参数有些不同。
-其损失函数为：
+softmax回归使用**交叉熵损失函数**，$loss(a_1,...a_N,y) = -loga_i,y = i$，我们将其放在输出层。
+
+### 精度与舍入
+
+在进行数学运算时要注意到精度问题，尤其是使用python处理浮点数。我们应尽可能的避免中间变量的再赋值，而是一步到位，以最小化精度的损失。
 
 ```
+model = Sequential([
+    Dense(units=25,activation='relu')
+    Dense(units=15,activation='relu')
+    Dense(units=1,activation='sigmoid')
+])
+model.complie(loss = BinaryCrossentropy())
+```
 
+这是logistic回归所使用的代码。最后一层定义了sigmoid函数作为激活函数，随后使用二进制交叉熵编译。
+在这个过程中，我们先定义了中间函数sigmoid函数，随后使用该函数带入损失函数。一个更好的版本是：
 
 ```
+model = Sequential([
+    Dense(units=25,activation='relu')
+    Dense(units=15,activation='relu')
+    Dense(units=1,activation='linear')
+])
+# model.complie(loss = BinaryCrossentropy())
+model.complie(loss = BinaryCrossentropy(from_logits=True))
+```
+
+将最后一层定义 为线性，实际上就是什么激活都没有做，并将其直接传递到损失函数中。from_logits=Trued的含义即在内部进行logistic回归，使用sigmoid函数。
+这相当于避免了最后一层的中间函数，直接传递进损失函数，以减小舍入误差。
+在logistic回归，这样的精度问题尚可接受，而在softmax中，数值上的误差会变得更糟。
+
+---
+
+```
+model = Sequential([
+    Dense(units=25,activation='relu')
+    Dense(units=15,activation='relu')
+    Dense(units=10,activation='softmax')
+])
+model.complie(loss = SparseCategoricalCrossEntropy())
+```
+
+在softmax中，分步骤计算如代码所示。我们不希望：
+$\text{Loss} = L(\vec{a}, y) =
+\begin{cases}
+-\log a_1, & \text{if } y = 1 \\
+\vdots \\
+-\log a_{10}& \text{if } y = 10
+\end{cases}$
+
+而是：
+$\text{Loss} = L(\vec{a}, y) =
+\begin{cases}
+-log\frac{e^{z_1}}{e^{z_1}+...+e^{z_{10}}}, & \text{if } y = 1 \\
+\vdots \\
+-log\frac{e^{z_1}}{e^{z_{10}}+...+e^{z_{10}}}, & \text{if } y = 10
+\end{cases}$
+
+其代码优化如下：
+
+```
+model = Sequential([
+    Dense(units=25,activation='relu')
+    Dense(units=15,activation='relu')
+    Dense(units=10,activation='linear')
+])
+model.complie(loss = SparseCategoricalCrossEntropy(from_logits=True))
+```
+
+### 多标签分类 Multi-label Classification
+
+假如你要从一个图片里识别：汽车，公交，行人呢？ 
+一个奢侈的想法是同时训练三个网络，分别识别汽车，公交，行人。
+
+更常见的想法是，我们把输出层拓展为多个神经元输出。由于识别是一个二分类问题，也许输出层神经元将使用sigmoid函数作为激活函数。
+令：
+$\vec{a}^{[3]} = \begin{pmatrix}
+    a_1^{[3]} \\
+    a_2^{[3]} \\
+    a_3^{[3]}
+\end{pmatrix}$，分别表示car,bus,pedestrian
+
+## 高级优化方法 Avdanced Optimization
+
+### Adam算法
+
+梯度下降是我们常用的优化算法，用于线性回归和逻辑回归以及神经网络的早期实现。但事实证明有一些其他的优化算法，为了最小化代价函数，比梯度下降更优秀。
+
+**Adam**(Adaptive Moment estimation)，**自适应矩估计**算法可以自动的调节学习率 $\alpha$。
+- 若参数下降方向大致相同，提高学习率
+- 若方向左右摇摆来回震荡，可以减小学习率
+它不使用全局的单一学习速率，而对每一个参数都使用不同的学习速率。如果我们有参数w_1~w_10和b，我们将拥有11个不同的学习率参数，作用于不同的参数。绝大多数从业者都是用Adam，而不是最原始的梯度下降算法。
+
+### 额外的几种层
+
+到目前为止，我们使用的所有神经网络层都是**密集**(dense)的，接受上一层的所有激活值。而实际上还有一些其他类型的层，比如**卷积层**(Convolutional Layer)
+
+考虑你要识别一个手写的数字，你建立了一个层来识别图像的像素。而每个神经元只识别该图像的一部分区域。一方面，它计算起来更快。另一方面，它需要更少的训练数据，也不容易过拟合。
+
+这种类型的层，每个神经元只看一个区域。输入图像，我们称之为**卷积层**。如果你在神经网络里用了很多卷积层，有时我们就会叫他**卷积神经网络**(Convolutional Neural Network)
+
+---
+
+考虑你想要通过识别心电图来判断病人是否有心脏问题。
+
+![image not found](./resources/images/卷积层.png)
+
+如图，你将心电图量化为特征 $x_1$ ~ $x_{100}$，并传递给卷积层。
+其中卷积层的神经元都只接受一部分特征作为输入，第二个卷积层又只接受一部分第一个卷积层的输出作为输入。最终我们将其传递到sigmoid输出层以判断二分类。
+
+对于卷积层，你有很多结构上的选择。比如每个神经元的输入窗口应该有多大，一层分几个神经元。
