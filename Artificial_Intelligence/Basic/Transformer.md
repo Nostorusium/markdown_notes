@@ -33,8 +33,6 @@ GPT-3使用了 *175,181,291,520* 个参数，可以被组织为 *27,938* 个参�
 
 如果你取女人和男人的向量之差 $E(woman) - E(man)$ 并将其视为一个空间中的小向量，这个向量差将与女王与国王的向量之差 $E(queen) - E(king)$ 非常相似。假如你不知道 $E(queen)$ ，那么你可以令 $E(queen) \approx E(king)+E(woman)-E(man)$ ，理论上这是可行的。
 
-
-
 ![image not found](./resources/images/embedding_example.png)
 
 $ E(\text{Hitler})+E(\text{Italy})-E(\text{Germany}) $ 很有可能得到 $E(\text{Mussolinis})$，就好像模型学会了将某个方向与国家联系起来，另一个方向与二战领导人联系起来一样。
@@ -57,9 +55,9 @@ $ E(\text{Hitler})+E(\text{Italy})-E(\text{Germany}) $ 很有可能得到 $E(\te
 
 在softmax输出时，我们也会做一些特殊处理。
 
-\[
+$$
     Softmax(x_i) = \frac{e^{x_i/T}}{\sum_{n=0}^{N-1}e^{x_n/T}}
-\]
+$$
 
 我们有时会加个分母T，称**温度**。当T较大时，他会给低值赋予更多权重，使分布更均匀。如果T较小，那么意味着所有权重都给到最大值。
 
