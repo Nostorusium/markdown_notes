@@ -79,7 +79,7 @@ Most competitive neural sequence transduction models have an encoder-decoder str
 ---
 
 > 图中 shifted right 表示的是目标序列的"移位"
-> 在模型的训练过程中，在序列前加入 \<BOS> begin of start
+> 在模型的训练过程中，在序列前加入 \<BOS> begin of sentense
 > 比如Bonjour → Hello 的翻译过程中，我们将插入一个\<BOS>
 > 输入将是: \<BOS> Hello 并期望得到输出: Hello \<EOS>
 > 在实际的推理中，输入只有 \<BOS> 因为我们要一点一点生成
@@ -184,6 +184,7 @@ $$
 $$
 q = \vec{x} W^Q_{model \times \frac{model}{h}}
 $$
+FFL只期望一个注意力头，因此我们需要将多个分割的注意力头粘合在一起后，通过投影矩阵 $W^O$ 将其变换回前馈网络需要的大小。
 
 ### 3.2.3 Applications of Attention in our Model
 
@@ -241,3 +242,27 @@ where $ pos $ is the position and $ i $ is the dimension. That is, each dimensio
 We chose this function because we hypothesized it would allow the model to easily learn to attend by relative positions, since for any fixed offset $ k $, $ PE_{pos+k} $ can be represented as a linear function of $ PE_{pos} $.
 
 We also experimented with using learned positional embeddings [9] instead, and found that the two versions produced nearly identical results (see Table 3 row (E)). We chose the sinusoidal version because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training.
+
+
+## myVisualized View
+
+![alt text](./resources/AIAYN/scoring.png)
+
+>This softmax score determines **how much each word will be expressed** at this position. Clearly the word at this position will have the highest softmax score, but sometimes it’s useful to attend to another word that is relevant to the current word.
+
+$ q_1·k_2$ 计算出 $x_1$ 在 $x_2$ 位置的 'score'，用softmax进行标准化。
+
+>The fifth step is to multiply each value vector by the softmax score (in preparation to sum them up). The intuition here is to keep intact the values of the word(s) we want to focus on, and *drown-out* irrelevant words (by multiplying them by tiny numbers like 0.001, for example).
+
+softmax_score与 $V$ 相乘体现为尽量保持有关词的联系，排空无关词的干扰。
+
+---
+
+在列向量视角下, $M \vec{x} = \vec{b}$ 视为对列向量 $\vec{x}$ 的变换。即空间变换体现在左乘。
+在行向量视角下, $\vec{x} M = \vec{b}$ 视为对行向量 $\vec{x}$ 的变换。即空间变换体现在右乘。
+
+## myReferences
+
+- illustrated Transformer
+  https://jalammar.github.io/illustrated-transformer/
+
