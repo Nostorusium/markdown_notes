@@ -9,7 +9,7 @@
       ^ window size=5
 ```
 
-*e.g.*寻找最长的子字符串，包含K个唯一的字符。
+*e.g.* 寻找最长的子字符串，包含K个唯一的字符。
 ```
 input: aabbcc , k = 1
 outout: 2
