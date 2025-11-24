@@ -52,7 +52,11 @@ MCP采用 **client-host-server** 架构。每个host可以运行多个client实�
 2. Client
    client由host创建，并保持一个独立的server连接。负责与server建立有状态的会话，处理通信等。client与server有一对一关系。
 3. Server
-   server提供专业的上下文和能力。通过MCP原语暴露resources,tools,prompts。通过client提供的接口请求sampling。可以使本地进程，也可以是远程服务。
+   server提供专业的上下文和能力。通过MCP原语暴露resources,tools,prompts。通过client提供的接口请求sampling。可以是本地进程，也可以是远程服务。
+
+Agent负责协调LLM与MCP Client。而对于MCP Server，我们可以认为它是一个远端的存在，使用固定通信模式与Agent维护的Client交互，哪怕它存在于本地上。
+
+Agent所关注的只有MCP Client和LLM的协调交互等，而MCP Server的实现应当独立运作。
 
 ### JSON-RPC协议
 
@@ -132,7 +136,7 @@ client与server的id应对应。client在method中写明希望调用的tool,serv
 
 ### MCP Server
 
-MCP将Server的功能划分为5个独立的能力模块。Server只需要实现需要的功能，无需全部支持。
+MCP Server的功能划分如下。
 
 1. Tools
    Server暴露可执行功能，供LLM调用
@@ -140,14 +144,23 @@ MCP将Server的功能划分为5个独立的能力模块。Server只需要实现�
    Server暴露数据和内容供client读取并作为LLM的上下文
 3. Prompts
    Server定义可复用的prompt，引导LLM交互
-4. Sampling
-   允许server反向请求Host的LLM的能力，让Server也能使用AI
-5. Roots
-   client提供给server指定的一些地址，告诉服务器应该关注那些资源。
 
 与MCP Server的交互全部遵循JSON-RPC协议。
 
-### MCP Host & Client
+### MCP Client
+
+除了基本的连接通信功能之外，Client可以给服务器提供额外的功能：
+
+1. Sampling
+   允许server反向请求Host的LLM的能力，让Server也能使用AI
+2. Roots
+   client提供给server指定的一些地址，告诉服务器应该关注那些资源。
+3. Elicitation
+   允许server向user发送请求，来获得更多信息
+4. Logging
+   允许server向client发送日志信息
+
+### MCP Host
 
 在MCP的架构中，Host负责client的实现、LLM的集成、会话的管理等等。LLM仅仅是Host的一个组成部分。类似于 *Claude Desktop* 的应用是一个完整的Host实现。
 
@@ -167,6 +180,25 @@ MCP将Server的功能划分为5个独立的能力模块。Server只需要实现�
    你喜欢的其他功能
 
 在这个意义上，不依赖如 *Claude Desktop* 的应用从零实现一个Host(Agent)是一个复杂的工作。
+
+### 我们应当如何看待MCP
+
+MCP有两个层级，数据层和传输层。
+在数据层面，我们采用JSON-RPC，规定了client和server交互的信息结构和语义。
+1. 生命周期管理
+   如何初始化连接，如何关闭。
+2. Server功能
+   让Server提供必要的tool给AI使用、暴露必要的数据、提供必要的prompt
+3. Client功能
+   允许Server向Client反向交互，请求更多用户信息，或者调用LLM等。
+4. 其他实用的功能
+   比如利用notification实现实时更新等。
+
+在传输层面管理client与server之间的沟通信道。
+1. stdio传输
+   使用标准I/O，与本地的进程直接通信。
+2. streamable HTTP 传输
+   使用HTTP POST交互方式
 
 ## 异步网络通信与上下文管理
 
@@ -189,7 +221,7 @@ async def hello_world():
 
 ---
 
-asyncio中，使用**事件循环**(event loop)调度和执行协程。它不停地查询是否有任务要执行，并在任务完成后调用回调函数。这也是一个典中典的网络通信情境下对事件机制的应用。
+asyncio中，使用**事件循环**(event loop)调度和执行协程。循环中的协程时而阻塞，时而被执行。它不停地查询是否有任务要执行，并在任务完成后调用回调函数。这也是一个典中典的网络通信情境下对事件机制的应用。
 
 ```
 async def main():
@@ -357,7 +389,118 @@ async with AsyncExitStack() as stack:
 enter_context则改名为enter_async_context
 简单来说，它只是在ExitStack的基础上加入了async/await支持。
 
+## MCP Server
+
+MCP Server的**主要**功能如下。
+
+### Resources
+
+```
+@mcp.resource("file://documents/{name}")
+def read_document(name: str) -> str:
+    """Read a document by name."""
+    # This would normally read from disk
+    return f"Content of {name}"
+```
+
+resource的使用类似于REST API中的GET，目的是暴露服务器可用的数据。它不应当承担运算功能，也不应该产生任何副作用。它由应用本身控制，而不由LLM控制。我们使用url来确定一个资源。
+
+### Tools
+
+```
+@mcp.tool()
+def sum(a: int, b: int) -> int:
+    """Add two numbers together."""
+    return a + b
+```
+
+tools用于让LLM做出决策。不同于resources，tools应当承担运算功能，并伴随副作用。
+
+```
+{
+  name: "searchFlights",
+  description: "Search for available flights",
+  inputSchema: {
+    type: "object",
+    properties: {
+      origin: { type: "string", description: "Departure city" },
+      destination: { type: "string", description: "Arrival city" },
+      date: { type: "string", format: "date", description: "Travel date" }
+    },
+    required: ["origin", "destination", "date"]
+  }
+}
+```
+
+MCP使用JSON Schema定义一个tool，每个tool应当拥有清晰的输入和输出。
+协议本身提供了两个操作：
+1. tools/list
+   列出可用tool
+2. tools/call
+   调用某个tool
+
+### Prompts
+
+prompts主要用于定义结构化的输入和交互模式。
+
+```
+{
+  "name": "plan-vacation",
+  "title": "Plan a vacation",
+  "description": "Guide through vacation planning process",
+  "arguments": [
+    { "name": "destination", "type": "string", "required": true },
+    { "name": "duration", "type": "number", "description": "days" },
+    { "name": "budget", "type": "number", "required": false },
+    { "name": "interests", "type": "array", "items": { "type": "string" } }
+  ]
+}
+```
+
+比如这是一个"做一个假期计划"的prompt。比起非结构化的自然语言输入，prompt系统允许选择"做一个假期计划"作为模板并以该模式交互。
+
+协议规定了两个操作:
+1. prompts/list
+   用于发现可用的prompt
+2. prompts/get
+   用于获得prompt
+
+prompt的使用由用户控制，需要显式调用。
+
+
 ## MCP Client
+
+### 官方参考架构
+
+```
+class MCPClient:
+  def __init__(self):
+    self.session:Optional[ClientSession] = None
+    self.exit_stack = AsyncExitStack()
+    self.anthropic = Anthropic()
+```
+
+一个MCP Client需要维护与MCP Server连接的session，使用AsyncExitStack资源管理
+
+```
+# 以.py为例
+async def connect_to_server(self,server_script_path:str):
+  command = "python"
+
+  # 建立连接需要写params
+  server_params = StdioServerParameters(
+    command = command,
+    args = [server_script_path],
+    env = None
+  )
+
+  # 实例化standard I/O 方式的client，并加入上下文
+  stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+
+  # 
+  self.stdio,self.write = stdio_transport
+  self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+```
 
 ## Host
 
