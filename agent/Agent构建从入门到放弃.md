@@ -1,6 +1,6 @@
 # Agent构建从入门到放弃
 
-本指南旨在提供一个自底向上的Agent构建指南，给出必要的理论内容，以及需要补充的网络编程知识、python语法等技术细节，并最终导向可实现性强的代码实践。
+本指南旨在提供一个自底向上的Agent构建参考攻略，提供必要的理论内容，补充网络编程知识、python语法等技术细节，并最终指导具体的代码实践。
 
 ## 从零开始的MCP
 
@@ -48,11 +48,11 @@ OPEN AI在2023年提出了一个重要的概念: *Function Call*，函数调用�
 MCP采用 **client-host-server** 架构。每个host可以运行多个client实例。信息格式与交互基于JSON-RPC构建，提供一种有状态的会话协议，专注于上下文交换，clients与servers之间的协调。
 
 1. Host
-   充当协调者，用于管理client实例，控制client的连接、生命周期，管理client的上下文聚合。
+   通常也叫Agent，负责管理client实例，控制client的连接、生命周期，管理client的上下文聚合，提供用户交互接口等。
 2. Client
    client由host创建，并保持一个独立的server连接。负责与server建立有状态的会话，处理通信等。client与server有一对一关系。
 3. Server
-   server提供专业的上下文和能力。通过MCP原语暴露resources,tools,prompts。通过client提供的接口请求sampling。可以是本地进程，也可以是远程服务。
+   server提供专业的上下文和能力。通过MCP原语暴露resources,tools,prompts。通过client提供的接口请求sampling等额外功能。可以是本地进程，也可以是远程服务。
 
 Agent负责协调LLM与MCP Client。而对于MCP Server，我们可以认为它是一个远端的存在，使用固定通信模式与Agent维护的Client交互，哪怕它存在于本地上。
 
@@ -138,11 +138,11 @@ client与server的id应对应。client在method中写明希望调用的tool,serv
 
 MCP Server的功能划分如下。
 
-1. Tools
+1. **Tools**
    Server暴露可执行功能，供LLM调用
-2. Resources
+2. **Resources**
    Server暴露数据和内容供client读取并作为LLM的上下文
-3. Prompts
+3. **Prompts**
    Server定义可复用的prompt，引导LLM交互
 
 与MCP Server的交互全部遵循JSON-RPC协议。
@@ -151,24 +151,24 @@ MCP Server的功能划分如下。
 
 除了基本的连接通信功能之外，Client可以给服务器提供额外的功能：
 
-1. Sampling
+1. **Sampling**
    允许server反向请求Host的LLM的能力，让Server也能使用AI
-2. Roots
+2. **Roots**
    client提供给server指定的一些地址，告诉服务器应该关注那些资源。
-3. Elicitation
+3. **Elicitation**
    允许server向user发送请求，来获得更多信息
-4. Logging
+4. **Logging**
    允许server向client发送日志信息
 
 ### MCP Host
 
-在MCP的架构中，Host负责client的实现、LLM的集成、会话的管理等等。LLM仅仅是Host的一个组成部分。类似于 *Claude Desktop* 的应用是一个完整的Host实现。
+在MCP的架构中，Host(agent)负责client的实现、LLM的集成、会话的管理等等。LLM仅仅是Host的一个组成部分。类似于 *Claude Desktop* 的应用是一个完整的Host实现。
 
 在仅拥有一个LLM api的前提下，我们仍需要手写一个完整的Host并完成：
 
 1. Client实现
    比如，它应如何与server建立连接
-2. Rresponse处理
+2. Response处理
    如何处理接收到的响应?
 3. LLM集成
    基于api，或是本地部署?
@@ -181,10 +181,11 @@ MCP Server的功能划分如下。
 
 在这个意义上，不依赖如 *Claude Desktop* 的应用从零实现一个Host(Agent)是一个复杂的工作。
 
-### 我们应当如何看待MCP
+### Client与Server的交互
 
-MCP有两个层级，数据层和传输层。
-在数据层面，我们采用JSON-RPC，规定了client和server交互的信息结构和语义。
+MCP有两个层级，数据层和传输层。我们主要关注client与server的关系。
+
+在数据层，我们采用JSON-RPC，规定了client和server交互的信息结构和语义。
 1. 生命周期管理
    如何初始化连接，如何关闭。
 2. Server功能
@@ -194,11 +195,62 @@ MCP有两个层级，数据层和传输层。
 4. 其他实用的功能
    比如利用notification实现实时更新等。
 
-在传输层面管理client与server之间的沟通信道。
+在传输层管理client与server之间的沟通信道。
 1. stdio传输
    使用标准I/O，与本地的进程直接通信。
 2. streamable HTTP 传输
    使用HTTP POST交互方式
+
+
+### HOST与LLM API的交互
+
+MCP协议规定了client与server的交互模式。而HOST与LLM API的交互则需要遵循**API接口设计**的格式。
+
+```
+{
+  "messages": [
+    {"role": "system", "content": "你是助手"},
+    {"role": "user", "content": "你好"},
+    {"role": "assistant", "content": "你好！"}
+  ]
+}
+```
+
+在使用API时，你可能会使用相关库，组织上述message等内容作为body传输给API的对侧。它们最终将会以JSON格式递交给LLM API的后端。
+后端程序经过JSON解析，将message转换为适合的token序列递交给LLM。同理，tools等信息也会被以一定形式解析，加入到prompt之中。
+
+比如，经过了指定tools、给出user prompt，最终递交给LLM的上下文可能是这样的形式：
+
+```
+<|system|>
+你是助手
+你有以下工具可用：
+工具名称: get_weather
+描述: 获取天气
+参数要求:
+- city (字符串, 必填): 城市名称
+当需要使用工具时，请输出JSON格式：
+{"type": "tool_use", "name": "工具名", "input": {...}}
+
+<|user|>
+查询一下xxx的天气状况
+...
+```
+
+使用库时，我们所构建的各种入参的形式主要是为了满足API接口的设计，而不是满足LLM的要求。简而言之，我们是在使用包装过的HTTP协议与API进行交互，并按照约定构建body作为request交给API的对侧。
+
+而至于API对侧的后端对请求体解析后，会如何组织输入内容来作为LLM的input，则取决于其后端的具体实现。
+
+> 在写message时，role可以取system和user
+> 在经典的实现中，全局只有一个system prompt，他们会被统一组织在最开头，哪怕写了多个system prompt也会被捏在一起。
+> tools的相关信息通常会被加入到system prompt之中。这部分也会告知LLM回复应满足的JSON格式
+> 最后user prompt加入到末尾。
+
+对于一个经过了专门function call微调的模型而言，它具有稳定的输出特定格式回复的能力。HOST最终会接受到LLM输出的，满足schema的JSON输出。
+
+这些内容最终会被解析，并整理，指导于client与server的交互。
+
+
 
 ## 异步网络通信与上下文管理
 
@@ -391,7 +443,9 @@ enter_context则改名为enter_async_context
 
 ## MCP Server
 
-MCP Server的**主要**功能如下。
+MCP库的存在使我们不需要手动管理通信等内容。我们只需要按需完成一些必要的功能就可以实现一个运作良好的server
+
+MCP Server的**主要功能**如下。
 
 ### Resources
 
