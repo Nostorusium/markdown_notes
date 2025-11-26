@@ -60,7 +60,7 @@ Agent所关注的只有MCP Client和LLM的协调交互等，而MCP Server的实�
 
 ### JSON-RPC协议
 
-MCP协议就好比是一个为LLM服务的应用层的**网络协议**。它采用的**JSON-RPC**协议是一个基于JSON格式的轻量级**远程过程调用**(RPC)协议，基于请求与响应模型。它规定了双方通信的格式与交互流程。
+MCP协议在传输**数据格式**上采用**JSON-RPC**协议，一个基于JSON格式的轻量级**远程过程调用**(RPC)协议，基于请求与响应模型。它规定了双方通信的格式与交互流程。
 
 request与response均为JSON格式，由客户端发起，服务器处理后返回结果。应包含以下字段:
 
@@ -181,6 +181,10 @@ MCP Server的功能划分如下。
 
 在这个意义上，不依赖如 *Claude Desktop* 的应用从零实现一个Host(Agent)是一个复杂的工作。
 
+## Agent在做什么
+
+作为MCP Host的Agent主要有两个交互层。其中，Client与Server的交互遵循**MCP协议**。Agent与LLM API的交互则遵循**LLM API接口协议**。
+
 ### Client与Server的交互
 
 MCP有两个层级，数据层和传输层。我们主要关注client与server的关系。
@@ -248,9 +252,15 @@ MCP协议规定了client与server的交互模式。而HOST与LLM API的交互则
 
 对于一个经过了专门function call微调的模型而言，它具有稳定的输出特定格式回复的能力。HOST最终会接受到LLM输出的，满足schema的JSON输出。
 
-这些内容最终会被解析，并整理，指导于client与server的交互。
+### 工作流
 
+一个典型的工作流程是:
 
+1. Agent发送HTTP请求给LLM API(遵循如OpenAI API、Anthropic API)
+2. LLM API解析后组织input递交给LLM，并获得输出
+3. LLM输出的JSON响应伴随响应报文传回Agent
+4. Agent解析JSON，并组织与MCP Server的交互，比如执行func call
+5. 执行需要的操作后，循环。
 
 ## 异步网络通信与上下文管理
 
@@ -337,6 +347,8 @@ with的语法十分简单，只需要with表达式就可以执行自定义的业
 - \_\_exit\_\_
   在退出with语法块(**作用域**)、发生异常、return等情况时调用。等价于finally，能保证__exit__的执行
 
+一个上下文管理器定义了进入和退出上下文时的操作，并额外获得一个返回值。
+
 一个file可能类似于这样:
 
 ```
@@ -363,25 +375,23 @@ class File:
 python标准库提供的contextlib可以进一步简化我们的代码。该模块允许以装饰器的方式进行上下文管理。
 
 ```
-from contextlib import contextmanager
 @contextmanager
-def test():
-    print('before')
-    yield 'hello'
-    print('after')
+def file_handler(filename):
+  logging.info("Opening File")
+  file = open(filename,'r')
+  try:
+    yield file
+  finally:
+    file.close()
+    logging.info("File Closed")
 
-with test() as t:
-    print(t)
+with file_handler(filename) as f:
+  content = f.read()
+  logging.info("File Loaded")
+  return content
 ```
 
-其输出以yield为界:
-
-```
-# Output:
-# before
-# hello
-# after
-```
+使用 @contextmanager装饰器来将一个函数定义为一个上下文管理器。其中，yield用来产生交给with语句的资源。yield之前视为进入上下文时执行，yield之后视为离开上下文时执行。
 
 ### Exit Stack
 
@@ -457,7 +467,12 @@ def read_document(name: str) -> str:
     return f"Content of {name}"
 ```
 
-resource的使用类似于REST API中的GET，目的是暴露服务器可用的数据。它不应当承担运算功能，也不应该产生任何副作用。它由应用本身控制，而不由LLM控制。我们使用url来确定一个资源。
+resource的使用类似于REST API中的GET，目的是暴露服务器可用的数据。我们使用**uri**来确定一个资源。
+
+它不应当承担运算功能，也不应该产生任何副作用。它由应用本身控制，而不**由LLM控制**。也就是说资源的暴露只是为了丰富LLM的上下文，而不为LLM所直接使用。
+
+> resource适合内容相对固定、预先知道有哪些的内容
+> 作为LLM的背景知识，在Agent启动时加载,放入context
 
 ### Tools
 
@@ -521,20 +536,18 @@ prompts主要用于定义结构化的输入和交互模式。
 
 prompt的使用由用户控制，需要显式调用。
 
-
 ## MCP Client
 
-### 官方参考架构
+### 建立session和资源管理
 
 ```
 class MCPClient:
   def __init__(self):
     self.session:Optional[ClientSession] = None
     self.exit_stack = AsyncExitStack()
-    self.anthropic = Anthropic()
 ```
 
-一个MCP Client需要维护与MCP Server连接的session，使用AsyncExitStack资源管理
+一个MCP Client需要维护与MCP Server连接的session，使用AsyncExitStack进行资源管理。
 
 ```
 # 以.py为例
@@ -556,8 +569,60 @@ async def connect_to_server(self,server_script_path:str):
   self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
 ```
 
+我们可以认为进入exit stack的对象都实现了完备的上下文管理器，以确保在建立连接、初始化session的过程中不会出现资源泄露。
+
+### 获得tools
+
+
+```
+tools_response = await self.session.list_tools()
+```
+
+使用list_tools从MCP Server获得的tool列表。其中，一个tool在MCP协议中定义如下：
+
+```
+# 一个例子
+{
+  name: "searchFlights",
+  description: "Search for available flights",
+  inputSchema: {
+    type: "object",
+    properties: {
+      origin: { type: "string", description: "Departure city" },
+      destination: { type: "string", description: "Arrival city" },
+      date: { type: "string", format: "date", description: "Travel date" }
+    },
+    required: ["origin", "destination", "date"]
+  }
+}
+```
+
+Client从Server接收到的格式遵循MCP协议。而agent和LLM API交互时遵循API接口设计，通常需要一些格式上的转换。
+
+```
+# OpenAI API格式
+self.available_tools = [
+  {
+    "type": "function",
+    "function": {
+        "name": tool.name,
+        "description": tool.description or "",
+        "parameters": tool.inputSchema
+    }
+  }
+  for tool in tools_response.tools
+]
+```
+
+一个良好的做法是将这样的转换交给agent负责，而不是甩给client。让client专注于MCP协议。
+
 ## Host
 
-## Prompt最佳实践
+### Prompt最佳实践
 
-## 上下文管理
+每一条prompt都有role的区别，比如system prompt/user prompt。而递交给LLM的最终输入不会标识对话的role。
+
+它的原理在于，标注为不同role的内容被转换成token并最终递交给LLM时会使用特殊的格式。
+不同的格式下，我们可以认为模型对不同role下的文本有着不同权重的理解方式。这是LLM在训练阶段习得的模式。
+
+### LLM上下文管理
